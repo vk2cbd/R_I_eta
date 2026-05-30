@@ -13,6 +13,7 @@ from time import monotonic
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.ticker import AutoMinorLocator
 from matplotlib.widgets import Button, TextBox
 
 from . import __version__
@@ -29,6 +30,8 @@ SETTINGS_PATH = Path.home() / ".radio_interferometer_eta_settings.json"
 PLOT_CONTROL_WIDTH = 0.055
 PLOT_CONTROL_HEIGHT = 0.026
 PLOT_CONTROL_GAP = 0.006
+GRID_MAJOR_COLOR = "#d0d0d0"
+GRID_MINOR_COLOR = "#e8e8e8"
 
 FIELD_DEFAULTS = [
     ("observing_frequency_mhz", "Observing freq (MHz)", "4800"),
@@ -416,6 +419,7 @@ class InterferometryApp(tk.Tk):
         self.ax_west_auto_spectrum.set_title("West Antenna Spectrum")
         self.ax_west_auto_spectrum.set_xlabel("Sky frequency (MHz)")
         self.ax_west_auto_spectrum.set_ylabel("Power")
+        self._apply_graticules()
 
         (self.interferogram_line,) = self.ax_interferogram.plot([], [], color="#1f77b4", lw=1.4)
         (self.spectrum_line,) = self.ax_spectrum.plot(
@@ -459,6 +463,24 @@ class InterferometryApp(tk.Tk):
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         NavigationToolbar2Tk(self.canvas, plot_frame)
+
+    def _apply_graticules(self) -> None:
+        axes = (
+            self.ax_interferogram,
+            self.ax_spectrum,
+            self.ax_east_autocorr,
+            self.ax_west_autocorr,
+            self.ax_east_auto_spectrum,
+            self.ax_west_auto_spectrum,
+        )
+        for axis in axes:
+            axis.set_axisbelow(True)
+            axis.xaxis.set_minor_locator(AutoMinorLocator(2))
+            axis.yaxis.set_minor_locator(AutoMinorLocator(2))
+            axis.grid(True, which="major", color=GRID_MAJOR_COLOR, linewidth=0.75, alpha=0.9)
+            axis.grid(True, which="minor", color=GRID_MINOR_COLOR, linewidth=0.5, alpha=0.8)
+
+        self.ax_phase.grid(False)
 
     def _plot_panel_specs(self) -> dict[str, tuple[object, tk.StringVar, str, str]]:
         return {

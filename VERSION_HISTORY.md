@@ -1,5 +1,11 @@
 # Version History
 
+## 0.3.8-eta - Plot Graticules
+
+- Added consistent major and minor graticules to every plot pane.
+- Graticules are applied during GUI plot setup, so they are visible before
+  start, while running, and after stop.
+
 ## 0.3.7-eta - Runtime Field Feedback
 
 - Cleared stale backend plot results when runtime GUI parameters are changed.
