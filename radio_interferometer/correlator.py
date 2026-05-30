@@ -27,6 +27,8 @@ class CorrelatorResult:
     frequency_offsets_hz: np.ndarray
     cross_spectrum: np.ndarray
     interferogram: np.ndarray
+    east_auto_spectrum: np.ndarray
+    west_auto_spectrum: np.ndarray
     east_autocorrelation: np.ndarray
     west_autocorrelation: np.ndarray
     lag_bins: np.ndarray
@@ -118,6 +120,8 @@ class FXCorrelator:
         self._processed_blocks += 1
 
         shifted_cross = np.fft.fftshift(self._integrated_cross)
+        shifted_east_auto = np.fft.fftshift(self._integrated_east_auto)
+        shifted_west_auto = np.fft.fftshift(self._integrated_west_auto)
         interferogram = np.fft.fftshift(np.fft.ifft(self._integrated_cross))
         east_autocorrelation = np.fft.fftshift(np.fft.ifft(self._integrated_east_auto))
         west_autocorrelation = np.fft.fftshift(np.fft.ifft(self._integrated_west_auto))
@@ -126,6 +130,8 @@ class FXCorrelator:
             frequency_offsets_hz=self.frequency_offsets_hz.copy(),
             cross_spectrum=shifted_cross.copy(),
             interferogram=interferogram,
+            east_auto_spectrum=shifted_east_auto.copy(),
+            west_auto_spectrum=shifted_west_auto.copy(),
             east_autocorrelation=east_autocorrelation,
             west_autocorrelation=west_autocorrelation,
             lag_bins=self.lag_bins.copy(),

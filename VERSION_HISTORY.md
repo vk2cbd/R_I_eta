@@ -1,5 +1,13 @@
 # Version History
 
+## 0.3.6-eta - Antenna Spectra Panels
+
+- Added East Antenna Spectrum and West Antenna Spectrum panels using the
+  integrated autocorrelation-derived antenna power spectra.
+- Moved interferogram manual Y-axis scaling into the realtime interferogram
+  panel and removed those scale fields from the left GUI.
+- Reduced the in-plot Auto and manual scale controls to a more compact size.
+
 ## 0.3.5-eta - Autocorrelation Panels
 
 - Removed the global Apply Scales and Use Current Scales buttons.
