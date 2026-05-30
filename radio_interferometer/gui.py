@@ -572,7 +572,7 @@ class InterferometryApp(tk.Tk):
             control_font_size = PLOT_CONTROL_FONT_SIZE
             button_y = position.y1 - PLOT_CONTROL_HEIGHT
             if name == "fringe_time":
-                control_x = position.x0 + PLOT_CONTROL_GAP
+                control_x = position.x0
             button_axis = self.figure.add_axes(
                 [control_x, button_y, control_width, PLOT_CONTROL_HEIGHT]
             )

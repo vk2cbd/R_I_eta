@@ -1,5 +1,10 @@
 # Version History
 
+## 0.3.16-eta - Fringe Control Alignment
+
+- Moved the Fringe I/Q control stack left so its boxes align with the plot
+  Y-axis.
+
 ## 0.3.15-eta - Fringe Control Simplification
 
 - Removed the I/Q legend from the Fringe I/Q plot.
