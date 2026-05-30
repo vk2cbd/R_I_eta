@@ -1,5 +1,14 @@
 # Version History
 
+## 0.3.1-eta - Eta Identity Baseline
+
+- Branched Eta from the frozen Epsilon visibility-recording baseline.
+- Changed the app version suffix from Delta to Eta.
+- Changed persisted GUI settings to use an Eta-specific settings file so Eta
+  starts cleanly and does not inherit Delta/Zeta GUI settings.
+- No functional GUI, correlator, backend, SDR, or documentation behaviour was
+  changed in this baseline commit.
+
 ## 0.3.1-delta - Broadband Visibility Display and Recording
 
 - Added realtime broadband visibility readout with real, imaginary, amplitude,
