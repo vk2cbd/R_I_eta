@@ -416,7 +416,6 @@ class InterferometryApp(tk.Tk):
 
     def _toggle_interferogram_autoscale(self) -> None:
         if self.interferogram_autoscale.get() == "on":
-            self._capture_interferogram_scale()
             self.interferogram_autoscale.set("off")
         else:
             self.interferogram_autoscale.set("on")
@@ -435,14 +434,6 @@ class InterferometryApp(tk.Tk):
         self.interferogram_autoscale_button.ax.set_facecolor(
             autoscale_button_color(self.interferogram_autoscale)
         )
-
-    def _capture_interferogram_scale(self) -> None:
-        y_min, y_max = self.ax_interferogram.get_ylim()
-        self.scale_inputs["interferogram_y_min"].set(f"{y_min:.6g}")
-        self.scale_inputs["interferogram_y_max"].set(f"{y_max:.6g}")
-        self._committed_scale_inputs["interferogram_y_min"] = f"{y_min:.6g}"
-        self._committed_scale_inputs["interferogram_y_max"] = f"{y_max:.6g}"
-        self._save_settings()
 
     def start(self) -> None:
         try:

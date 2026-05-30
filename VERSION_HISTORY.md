@@ -1,5 +1,12 @@
 # Version History
 
+## 0.3.4-eta - Decoupled Interferogram Manual Scale
+
+- Stopped copying the last autoscaled interferogram Y-axis limits into the
+  manual scale fields when Auto is turned off.
+- Turning Auto off now leaves the plot at its current displayed Y-axis range,
+  while manual fields retain their existing values until the user edits them.
+
 ## 0.3.3-eta - Interferogram Autoscale Button
 
 - Moved the interferogram autoscale control from the left GUI panel to a plot
