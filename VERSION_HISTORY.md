@@ -1,5 +1,13 @@
 # Version History
 
+## 0.3.5-eta - Autocorrelation Panels
+
+- Removed the global Apply Scales and Use Current Scales buttons.
+- Moved Start and Stop near the top of the control panel above Observing freq.
+- Added East Antenna and West Antenna autocorrelation lag panels.
+- Added per-panel Auto On/Off buttons and manual Y-axis scale controls for the
+  autocorrelation panels.
+
 ## 0.3.4-eta - Decoupled Interferogram Manual Scale
 
 - Stopped copying the last autoscaled interferogram Y-axis limits into the

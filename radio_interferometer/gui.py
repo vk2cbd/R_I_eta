@@ -13,7 +13,7 @@ from time import monotonic
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
-from matplotlib.widgets import Button
+from matplotlib.widgets import Button, TextBox
 
 from . import __version__
 from .backend import CorrelatorBackendProcess
@@ -57,6 +57,13 @@ SCALE_FIELD_DEFAULTS = [
     ("spectrum_y_max", "Spectrum Y max", "1.0"),
 ]
 
+AUTOCORR_SCALE_DEFAULTS = [
+    ("east_autocorr_y_min", "East autocorr Y min", "0.0"),
+    ("east_autocorr_y_max", "East autocorr Y max", "1.0"),
+    ("west_autocorr_y_min", "West autocorr Y min", "0.0"),
+    ("west_autocorr_y_max", "West autocorr Y max", "1.0"),
+]
+
 CONTINUUM_FIELD_DEFAULTS = [
     ("continuum_edge_percent", "Continuum edge exclude (%)", "10.0"),
     ("continuum_rfi_sigma", "Continuum RFI sigma (0 off)", "0.0"),
@@ -98,10 +105,13 @@ DEFAULT_SETTINGS = {
     "phase_plot_mode": "off",
     "interferogram_autoscale": "on",
     "spectrum_autoscale": "on",
+    "east_autocorr_autoscale": "on",
+    "west_autocorr_autoscale": "on",
     "continuum_snr_mode": "on",
     "record_visibility_mode": "off",
     **{key: default for key, _, default in FIELD_DEFAULTS},
     **{key: default for key, _, default in SCALE_FIELD_DEFAULTS},
+    **{key: default for key, _, default in AUTOCORR_SCALE_DEFAULTS},
     **{key: default for key, _, default in CONTINUUM_FIELD_DEFAULTS},
     **{key: default for key, _, default in VISIBILITY_FIELD_DEFAULTS},
 }
@@ -135,10 +145,15 @@ class InterferometryApp(tk.Tk):
         self._committed_scale_inputs = {
             key: self._settings.get(key, default) for key, _, default in SCALE_FIELD_DEFAULTS
         }
+        self._autocorr_scale_inputs = {
+            key: self._settings.get(key, default) for key, _, default in AUTOCORR_SCALE_DEFAULTS
+        }
         self._update_calculated_observing_frequency(self._committed_inputs)
         self._last_draw_time = 0.0
         self._last_visibility_record_time = 0.0
         self._last_interferogram_mag: np.ndarray | None = None
+        self._last_east_autocorr_mag: np.ndarray | None = None
+        self._last_west_autocorr_mag: np.ndarray | None = None
 
         self._build_controls()
         self._build_plots()
@@ -216,6 +231,12 @@ class InterferometryApp(tk.Tk):
 
         self.interferogram_autoscale = tk.StringVar(value=self._settings["interferogram_autoscale"])
         self.spectrum_autoscale = tk.StringVar(value=self._settings["spectrum_autoscale"])
+        self.east_autocorr_autoscale = tk.StringVar(
+            value=self._settings["east_autocorr_autoscale"]
+        )
+        self.west_autocorr_autoscale = tk.StringVar(
+            value=self._settings["west_autocorr_autoscale"]
+        )
         ttk.Label(panel, text="Spectrum scale").grid(row=3, column=0, sticky="w", pady=3)
         spectrum_scale_options = ttk.Frame(panel)
         spectrum_scale_options.grid(row=3, column=1, sticky="w", pady=3)
@@ -268,8 +289,13 @@ class InterferometryApp(tk.Tk):
             value="off",
         ).pack(side=tk.LEFT, padx=(8, 0))
 
+        self.start_button = ttk.Button(panel, text="Start", command=self.start)
+        self.start_button.grid(row=6, column=0, sticky="ew", pady=(10, 3))
+        self.stop_button = ttk.Button(panel, text="Stop", command=self.stop, state=tk.DISABLED)
+        self.stop_button.grid(row=6, column=1, sticky="ew", pady=(10, 3))
+
         self.inputs: dict[str, tk.StringVar] = {}
-        for row, (key, label, default) in enumerate(FIELD_DEFAULTS, start=6):
+        for row, (key, label, default) in enumerate(FIELD_DEFAULTS, start=7):
             ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", pady=3)
             value = tk.StringVar(value=self._settings.get(key, default))
             self.inputs[key] = value
@@ -280,7 +306,7 @@ class InterferometryApp(tk.Tk):
             if key != "observing_frequency_mhz":
                 entry.bind("<Return>", self._commit_text_fields)
 
-        continuum_row = len(FIELD_DEFAULTS) + 6
+        continuum_row = len(FIELD_DEFAULTS) + 7
         self.continuum_inputs: dict[str, tk.StringVar] = {}
         for row, (key, label, default) in enumerate(CONTINUUM_FIELD_DEFAULTS, start=continuum_row):
             ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", pady=3)
@@ -310,31 +336,18 @@ class InterferometryApp(tk.Tk):
             entry.grid(row=row, column=1, sticky="ew", pady=3)
             entry.bind("<Return>", self._commit_text_fields)
 
-        scale_button_row = scale_row + len(SCALE_FIELD_DEFAULTS)
-        ttk.Button(panel, text="Apply Scales", command=self._commit_text_fields).grid(
-            row=scale_button_row, column=0, sticky="ew", pady=(8, 3)
-        )
-        ttk.Button(panel, text="Use Current Scales", command=self._capture_current_scales).grid(
-            row=scale_button_row, column=1, sticky="ew", pady=(8, 3)
-        )
-
-        button_row = scale_button_row + 1
-        self.start_button = ttk.Button(panel, text="Start", command=self.start)
-        self.start_button.grid(row=button_row, column=0, sticky="ew", pady=(14, 3))
-        self.stop_button = ttk.Button(panel, text="Stop", command=self.stop, state=tk.DISABLED)
-        self.stop_button.grid(row=button_row, column=1, sticky="ew", pady=(14, 3))
-
+        button_row = scale_row + len(SCALE_FIELD_DEFAULTS)
         self.reset_button = ttk.Button(panel, text="Reset Avg", command=self.reset_average)
-        self.reset_button.grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=3)
+        self.reset_button.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=3)
 
-        ttk.Separator(panel).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=12)
+        ttk.Separator(panel).grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=12)
         self.status = tk.StringVar(value="Ready")
         ttk.Label(panel, textvariable=self.status, wraplength=240).grid(
-            row=button_row + 3, column=0, columnspan=2, sticky="w"
+            row=button_row + 2, column=0, columnspan=2, sticky="w"
         )
         self.visibility_status = tk.StringVar(value="Visibility: --")
         ttk.Label(panel, textvariable=self.visibility_status, wraplength=240).grid(
-            row=button_row + 4, column=0, columnspan=2, sticky="w", pady=(8, 0)
+            row=button_row + 3, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
         panel.columnconfigure(1, weight=1)
 
@@ -343,6 +356,8 @@ class InterferometryApp(tk.Tk):
         self._watch_control(self.phase_plot_mode)
         self._watch_control(self.interferogram_autoscale)
         self._watch_control(self.spectrum_autoscale)
+        self._watch_control(self.east_autocorr_autoscale)
+        self._watch_control(self.west_autocorr_autoscale)
         self._watch_control(self.continuum_snr_mode)
         self._watch_control(self.record_visibility_mode)
 
@@ -350,9 +365,11 @@ class InterferometryApp(tk.Tk):
         plot_frame = ttk.Frame(self, padding=(0, 10, 10, 10))
         plot_frame.pack(side=tk.RIGHT, expand=True, fill=tk.BOTH)
 
-        self.figure = Figure(figsize=(8, 6), dpi=100)
-        self.ax_interferogram = self.figure.add_subplot(211)
-        self.ax_spectrum = self.figure.add_subplot(212)
+        self.figure = Figure(figsize=(10, 8), dpi=100)
+        self.ax_interferogram = self.figure.add_subplot(221)
+        self.ax_spectrum = self.figure.add_subplot(222)
+        self.ax_east_autocorr = self.figure.add_subplot(223)
+        self.ax_west_autocorr = self.figure.add_subplot(224)
         self.ax_phase = self.ax_spectrum.twinx()
 
         self.ax_interferogram.set_title("Realtime Interferogram")
@@ -362,12 +379,24 @@ class InterferometryApp(tk.Tk):
         self.ax_spectrum.set_xlabel("Sky frequency (MHz)")
         self.ax_spectrum.set_ylabel("|Cross power|")
         self.ax_phase.set_ylabel("Phase (rad)")
+        self.ax_east_autocorr.set_title("East Antenna Autocorrelation")
+        self.ax_east_autocorr.set_xlabel("Lag bin")
+        self.ax_east_autocorr.set_ylabel("|Autocorrelation|")
+        self.ax_west_autocorr.set_title("West Antenna Autocorrelation")
+        self.ax_west_autocorr.set_xlabel("Lag bin")
+        self.ax_west_autocorr.set_ylabel("|Autocorrelation|")
 
         (self.interferogram_line,) = self.ax_interferogram.plot([], [], color="#1f77b4", lw=1.4)
         (self.spectrum_line,) = self.ax_spectrum.plot(
             [], [], color="#2ca02c", lw=1.3, drawstyle="default"
         )
         (self.phase_line,) = self.ax_phase.plot([], [], color="#d62728", lw=1.0, alpha=0.78)
+        (self.east_autocorr_line,) = self.ax_east_autocorr.plot(
+            [], [], color="#9467bd", lw=1.2
+        )
+        (self.west_autocorr_line,) = self.ax_west_autocorr.plot(
+            [], [], color="#17becf", lw=1.2
+        )
         self.peak_vline = self.ax_interferogram.axvline(
             0.0, color="#111111", lw=1.0, ls="--", alpha=0.7
         )
@@ -387,6 +416,7 @@ class InterferometryApp(tk.Tk):
 
         self.figure.tight_layout()
         self._build_interferogram_autoscale_button()
+        self._build_autocorr_controls()
         self._apply_plot_visibility(draw=False)
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
@@ -413,6 +443,89 @@ class InterferometryApp(tk.Tk):
         self.interferogram_autoscale_button.on_clicked(
             lambda _event: self._toggle_interferogram_autoscale()
         )
+
+    def _build_autocorr_controls(self) -> None:
+        self._autocorr_buttons: dict[str, Button] = {}
+        self._autocorr_textboxes: dict[str, TextBox] = {}
+        specs = {
+            "east": (self.ax_east_autocorr, self.east_autocorr_autoscale),
+            "west": (self.ax_west_autocorr, self.west_autocorr_autoscale),
+        }
+        for name, (axis, autoscale_var) in specs.items():
+            position = axis.get_position()
+            control_x = position.x1 - 0.11
+            button_axis = self.figure.add_axes([control_x, position.y1 - 0.04, 0.105, 0.03])
+            button = Button(
+                button_axis,
+                autoscale_button_label(autoscale_var),
+                color=autoscale_button_color(autoscale_var),
+                hovercolor="#d9ead3",
+            )
+            button.on_clicked(
+                lambda _event, name=name, autoscale_var=autoscale_var: self._toggle_autocorr_autoscale(
+                    name,
+                    autoscale_var,
+                )
+            )
+            self._autocorr_buttons[name] = button
+
+            min_axis = self.figure.add_axes([control_x, position.y1 - 0.08, 0.105, 0.025])
+            max_axis = self.figure.add_axes([control_x, position.y1 - 0.115, 0.105, 0.025])
+            min_box = TextBox(
+                min_axis,
+                "Y min ",
+                initial=self._autocorr_scale_inputs[f"{name}_autocorr_y_min"],
+            )
+            max_box = TextBox(
+                max_axis,
+                "Y max ",
+                initial=self._autocorr_scale_inputs[f"{name}_autocorr_y_max"],
+            )
+            min_box.on_submit(lambda _text, name=name: self._commit_autocorr_scale(name))
+            max_box.on_submit(lambda _text, name=name: self._commit_autocorr_scale(name))
+            self._autocorr_textboxes[f"{name}_min"] = min_box
+            self._autocorr_textboxes[f"{name}_max"] = max_box
+
+    def _toggle_autocorr_autoscale(self, name: str, autoscale_var: tk.StringVar) -> None:
+        autoscale_var.set("off" if autoscale_var.get() == "on" else "on")
+        if autoscale_var.get() == "on":
+            values = (
+                self._last_east_autocorr_mag
+                if name == "east"
+                else self._last_west_autocorr_mag
+            )
+            axis = self.ax_east_autocorr if name == "east" else self.ax_west_autocorr
+            if values is not None:
+                autoscale_positive_axis(axis, values)
+        self._refresh_autocorr_button(name)
+        self._apply_autocorr_plot_scales(draw=True)
+
+    def _refresh_autocorr_button(self, name: str) -> None:
+        button = self._autocorr_buttons[name]
+        variable = (
+            self.east_autocorr_autoscale if name == "east" else self.west_autocorr_autoscale
+        )
+        button.label.set_text(autoscale_button_label(variable))
+        button.color = autoscale_button_color(variable)
+        button.ax.set_facecolor(autoscale_button_color(variable))
+
+    def _commit_autocorr_scale(self, name: str) -> None:
+        min_box = self._autocorr_textboxes[f"{name}_min"]
+        max_box = self._autocorr_textboxes[f"{name}_max"]
+        min_key = f"{name}_autocorr_y_min"
+        max_key = f"{name}_autocorr_y_max"
+        try:
+            y_min = parse_scale_value(min_box.text)
+            y_max = parse_scale_value(max_box.text)
+            validate_scale_limits(y_min, y_max)
+        except ValueError as exc:
+            self.status.set(f"{name.title()} autocorr scale not applied: {exc}")
+            return
+        self._autocorr_scale_inputs[min_key] = min_box.text.strip()
+        self._autocorr_scale_inputs[max_key] = max_box.text.strip()
+        self._save_settings()
+        self._apply_autocorr_plot_scales(draw=True)
+        self.status.set(f"{name.title()} autocorr scale committed")
 
     def _toggle_interferogram_autoscale(self) -> None:
         if self.interferogram_autoscale.get() == "on":
@@ -595,9 +708,28 @@ class InterferometryApp(tk.Tk):
         if self.spectrum_autoscale.get() == "on":
             self.ax_spectrum.set_ylim(0, max(float(spectrum_envelope.max()) * 1.15, 1e-6))
         self.ax_phase.set_ylim(-np.pi, np.pi)
+
+        east_autocorr_mag = np.abs(result.east_autocorrelation)
+        west_autocorr_mag = np.abs(result.west_autocorrelation)
+        self._last_east_autocorr_mag = east_autocorr_mag
+        self._last_west_autocorr_mag = west_autocorr_mag
+        self.east_autocorr_line.set_data(result.lag_bins, east_autocorr_mag)
+        self.west_autocorr_line.set_data(result.lag_bins, west_autocorr_mag)
+        lag_min = float(result.lag_bins.min())
+        lag_max = float(result.lag_bins.max())
+        self.ax_east_autocorr.set_xlim(lag_min, lag_max)
+        self.ax_west_autocorr.set_xlim(lag_min, lag_max)
+        if self.east_autocorr_autoscale.get() == "on":
+            autoscale_positive_axis(self.ax_east_autocorr, east_autocorr_mag)
+        if self.west_autocorr_autoscale.get() == "on":
+            autoscale_positive_axis(self.ax_west_autocorr, west_autocorr_mag)
+
         self._apply_plot_visibility(draw=False)
         self._apply_plot_scales(draw=False)
+        self._apply_autocorr_plot_scales(draw=False)
         self._refresh_interferogram_autoscale_button()
+        self._refresh_autocorr_button("east")
+        self._refresh_autocorr_button("west")
 
         self.canvas.draw_idle()
 
@@ -687,8 +819,12 @@ class InterferometryApp(tk.Tk):
         self._save_settings()
         self._apply_plot_visibility(draw=False)
         self._apply_plot_scales(draw=False)
+        self._apply_autocorr_plot_scales(draw=False)
         if hasattr(self, "interferogram_autoscale_button"):
             self._refresh_interferogram_autoscale_button()
+        if hasattr(self, "_autocorr_buttons"):
+            self._refresh_autocorr_button("east")
+            self._refresh_autocorr_button("west")
         if self._running:
             self._apply_runtime_config_if_needed()
 
@@ -787,14 +923,23 @@ class InterferometryApp(tk.Tk):
         if draw:
             self.canvas.draw_idle()
 
-    def _capture_current_scales(self) -> None:
-        interferogram_min, interferogram_max = self.ax_interferogram.get_ylim()
-        spectrum_min, spectrum_max = self.ax_spectrum.get_ylim()
-        self.scale_inputs["interferogram_y_min"].set(f"{interferogram_min:.6g}")
-        self.scale_inputs["interferogram_y_max"].set(f"{interferogram_max:.6g}")
-        self.scale_inputs["spectrum_y_min"].set(f"{spectrum_min:.6g}")
-        self.scale_inputs["spectrum_y_max"].set(f"{spectrum_max:.6g}")
-        self._commit_text_fields()
+    def _apply_autocorr_plot_scales(self, draw: bool = True) -> None:
+        try:
+            if self.east_autocorr_autoscale.get() == "off":
+                y_min = parse_scale_value(self._autocorr_scale_inputs["east_autocorr_y_min"])
+                y_max = parse_scale_value(self._autocorr_scale_inputs["east_autocorr_y_max"])
+                validate_scale_limits(y_min, y_max)
+                self.ax_east_autocorr.set_ylim(y_min, y_max)
+            if self.west_autocorr_autoscale.get() == "off":
+                y_min = parse_scale_value(self._autocorr_scale_inputs["west_autocorr_y_min"])
+                y_max = parse_scale_value(self._autocorr_scale_inputs["west_autocorr_y_max"])
+                validate_scale_limits(y_min, y_max)
+                self.ax_west_autocorr.set_ylim(y_min, y_max)
+        except ValueError as exc:
+            self.status.set(f"Autocorr scale not applied: {exc}")
+            return
+        if draw:
+            self.canvas.draw_idle()
 
     def _record_visibility_if_needed(self, config, continuum, peak_lag_bin: float) -> None:
         if self.record_visibility_mode.get() != "on":
@@ -860,6 +1005,8 @@ class InterferometryApp(tk.Tk):
             "phase_plot_mode": self.phase_plot_mode.get(),
             "interferogram_autoscale": self.interferogram_autoscale.get(),
             "spectrum_autoscale": self.spectrum_autoscale.get(),
+            "east_autocorr_autoscale": self.east_autocorr_autoscale.get(),
+            "west_autocorr_autoscale": self.west_autocorr_autoscale.get(),
             "continuum_snr_mode": self.continuum_snr_mode.get(),
             "record_visibility_mode": self.record_visibility_mode.get(),
         }
@@ -867,6 +1014,7 @@ class InterferometryApp(tk.Tk):
         settings.update(self._committed_continuum_inputs)
         settings.update(self._committed_visibility_inputs)
         settings.update(self._committed_scale_inputs)
+        settings.update(self._autocorr_scale_inputs)
         try:
             SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         except OSError as exc:
@@ -998,6 +1146,8 @@ def load_settings() -> dict[str, str]:
         "phase_plot_mode",
         "interferogram_autoscale",
         "spectrum_autoscale",
+        "east_autocorr_autoscale",
+        "west_autocorr_autoscale",
         "continuum_snr_mode",
         "record_visibility_mode",
     ):

@@ -27,6 +27,8 @@ class CorrelatorResult:
     frequency_offsets_hz: np.ndarray
     cross_spectrum: np.ndarray
     interferogram: np.ndarray
+    east_autocorrelation: np.ndarray
+    west_autocorrelation: np.ndarray
     lag_bins: np.ndarray
 
 
@@ -69,6 +71,8 @@ class FXCorrelator:
         self._window = np.hanning(config.bins).astype(np.float64)
         self._window_power = np.sum(self._window**2)
         self._integrated_cross: np.ndarray | None = None
+        self._integrated_east_auto: np.ndarray | None = None
+        self._integrated_west_auto: np.ndarray | None = None
         self.frequency_offsets_hz = np.fft.fftshift(
             np.fft.fftfreq(config.bins, d=1.0 / config.sample_rate_hz)
         )
@@ -77,6 +81,8 @@ class FXCorrelator:
 
     def reset(self) -> None:
         self._integrated_cross = None
+        self._integrated_east_auto = None
+        self._integrated_west_auto = None
         self._processed_blocks = 0
 
     @property
@@ -93,21 +99,35 @@ class FXCorrelator:
         spectrum_a = np.fft.fft(a * self._window)
         spectrum_b = np.fft.fft(b * self._window)
         cross = spectrum_a * np.conj(spectrum_b) / self._window_power
+        east_auto = np.abs(spectrum_a) ** 2 / self._window_power
+        west_auto = np.abs(spectrum_b) ** 2 / self._window_power
 
         if self._integrated_cross is None:
             self._integrated_cross = cross
+            self._integrated_east_auto = east_auto
+            self._integrated_west_auto = west_auto
         else:
             alpha = self.config.integration_alpha
             self._integrated_cross = (1.0 - alpha) * self._integrated_cross + alpha * cross
+            self._integrated_east_auto = (
+                (1.0 - alpha) * self._integrated_east_auto + alpha * east_auto
+            )
+            self._integrated_west_auto = (
+                (1.0 - alpha) * self._integrated_west_auto + alpha * west_auto
+            )
         self._processed_blocks += 1
 
         shifted_cross = np.fft.fftshift(self._integrated_cross)
         interferogram = np.fft.fftshift(np.fft.ifft(self._integrated_cross))
+        east_autocorrelation = np.fft.fftshift(np.fft.ifft(self._integrated_east_auto))
+        west_autocorrelation = np.fft.fftshift(np.fft.ifft(self._integrated_west_auto))
 
         return CorrelatorResult(
             frequency_offsets_hz=self.frequency_offsets_hz.copy(),
             cross_spectrum=shifted_cross.copy(),
             interferogram=interferogram,
+            east_autocorrelation=east_autocorrelation,
+            west_autocorrelation=west_autocorrelation,
             lag_bins=self.lag_bins.copy(),
         )
 

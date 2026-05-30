@@ -19,6 +19,8 @@ def test_fx_correlator_returns_requested_bin_count() -> None:
 
     assert result.cross_spectrum.shape == (bins,)
     assert result.interferogram.shape == (bins,)
+    assert result.east_autocorrelation.shape == (bins,)
+    assert result.west_autocorrelation.shape == (bins,)
     assert result.frequency_offsets_hz.shape == (bins,)
     assert result.lag_bins[0] == -bins // 2
     assert result.lag_bins[-1] == bins // 2 - 1
