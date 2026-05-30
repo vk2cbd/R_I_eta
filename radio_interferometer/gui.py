@@ -15,7 +15,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.ticker import AutoMinorLocator
-from matplotlib.widgets import Button, TextBox
+from matplotlib.widgets import Button, Slider, TextBox
 
 from . import __version__
 from .backend import CorrelatorBackendProcess
@@ -33,7 +33,11 @@ PLOT_CONTROL_HEIGHT = 0.026
 PLOT_CONTROL_GAP = 0.006
 GRID_MAJOR_COLOR = "#d0d0d0"
 GRID_MINOR_COLOR = "#e8e8e8"
-FRINGE_HISTORY_SECONDS = 300.0
+FRINGE_WINDOW_MINUTES_MIN = 10.0
+FRINGE_WINDOW_MINUTES_MAX = 180.0
+FRINGE_WINDOW_MINUTES_DEFAULT = 10.0
+FRINGE_HISTORY_MAX_SECONDS = FRINGE_WINDOW_MINUTES_MAX * 60.0
+FRINGE_DISPLAY_MAX_POINTS = 5000
 
 FIELD_DEFAULTS = [
     ("observing_frequency_mhz", "Observing freq (MHz)", "4800"),
@@ -74,6 +78,8 @@ PLOT_SCALE_DEFAULTS = [
     ("east_auto_spectrum_y_max", "East spectrum Y max", "1.0"),
     ("west_auto_spectrum_y_min", "West spectrum Y min", "0.0"),
     ("west_auto_spectrum_y_max", "West spectrum Y max", "1.0"),
+    ("fringe_iq_y_min", "Fringe I/Q Y min", "-1.0"),
+    ("fringe_iq_y_max", "Fringe I/Q Y max", "1.0"),
 ]
 
 CONTINUUM_FIELD_DEFAULTS = [
@@ -121,6 +127,8 @@ DEFAULT_SETTINGS = {
     "west_autocorr_autoscale": "on",
     "east_auto_spectrum_autoscale": "on",
     "west_auto_spectrum_autoscale": "on",
+    "fringe_iq_autoscale": "on",
+    "fringe_time_window_minutes": f"{FRINGE_WINDOW_MINUTES_DEFAULT:.0f}",
     "continuum_snr_mode": "on",
     "record_visibility_mode": "off",
     **{key: default for key, _, default in FIELD_DEFAULTS},
@@ -174,6 +182,9 @@ class InterferometryApp(tk.Tk):
         self._fringe_time_history: deque[float] = deque()
         self._fringe_i_history: deque[float] = deque()
         self._fringe_q_history: deque[float] = deque()
+        self._fringe_time_window_minutes = parse_fringe_window_minutes(
+            self._settings["fringe_time_window_minutes"]
+        )
 
         self._build_controls()
         self._build_plots()
@@ -263,6 +274,7 @@ class InterferometryApp(tk.Tk):
         self.west_auto_spectrum_autoscale = tk.StringVar(
             value=self._settings["west_auto_spectrum_autoscale"]
         )
+        self.fringe_iq_autoscale = tk.StringVar(value=self._settings["fringe_iq_autoscale"])
         ttk.Label(panel, text="Spectrum scale").grid(row=3, column=0, sticky="w", pady=3)
         spectrum_scale_options = ttk.Frame(panel)
         spectrum_scale_options.grid(row=3, column=1, sticky="w", pady=3)
@@ -386,6 +398,7 @@ class InterferometryApp(tk.Tk):
         self._watch_control(self.west_autocorr_autoscale)
         self._watch_control(self.east_auto_spectrum_autoscale)
         self._watch_control(self.west_auto_spectrum_autoscale)
+        self._watch_control(self.fringe_iq_autoscale)
         self._watch_control(self.continuum_snr_mode)
         self._watch_control(self.record_visibility_mode)
 
@@ -398,7 +411,7 @@ class InterferometryApp(tk.Tk):
         plot_frame.pack(side=tk.RIGHT, expand=True, fill=tk.BOTH)
 
         self.figure = Figure(figsize=(11, 11), dpi=100)
-        grid = self.figure.add_gridspec(4, 2, height_ratios=[1.0, 1.0, 1.0, 0.85])
+        grid = self.figure.add_gridspec(5, 2, height_ratios=[1.0, 1.0, 1.0, 0.85, 0.12])
         self.ax_interferogram = self.figure.add_subplot(grid[0, 0])
         self.ax_spectrum = self.figure.add_subplot(grid[0, 1])
         self.ax_east_autocorr = self.figure.add_subplot(grid[1, 0])
@@ -406,6 +419,7 @@ class InterferometryApp(tk.Tk):
         self.ax_east_auto_spectrum = self.figure.add_subplot(grid[2, 0])
         self.ax_west_auto_spectrum = self.figure.add_subplot(grid[2, 1])
         self.ax_fringe_time = self.figure.add_subplot(grid[3, :])
+        self.ax_fringe_time_slider = self.figure.add_subplot(grid[4, :])
         self.ax_phase = self.ax_spectrum.twinx()
 
         self.ax_interferogram.set_title("Realtime Interferogram")
@@ -430,7 +444,7 @@ class InterferometryApp(tk.Tk):
         self.ax_fringe_time.set_title("Fringe I/Q vs Time")
         self.ax_fringe_time.set_xlabel("Time since start (s)")
         self.ax_fringe_time.set_ylabel("Broadband visibility")
-        self.ax_fringe_time.set_xlim(0.0, FRINGE_HISTORY_SECONDS)
+        self.ax_fringe_time.set_xlim(0.0, self._fringe_window_seconds())
         self.ax_fringe_time.set_ylim(-1.0, 1.0)
         self._apply_graticules()
 
@@ -457,7 +471,16 @@ class InterferometryApp(tk.Tk):
         (self.fringe_q_line,) = self.ax_fringe_time.plot(
             [], [], color="#d62728", lw=1.1, label="Q"
         )
-        self.ax_fringe_time.legend(loc="upper right", framealpha=0.8)
+        self.ax_fringe_time.legend(loc="upper left", framealpha=0.8)
+        self.fringe_time_slider = Slider(
+            self.ax_fringe_time_slider,
+            "Time span (min)",
+            FRINGE_WINDOW_MINUTES_MIN,
+            FRINGE_WINDOW_MINUTES_MAX,
+            valinit=self._fringe_time_window_minutes,
+            valstep=1.0,
+        )
+        self.fringe_time_slider.on_changed(self._on_fringe_window_changed)
         self.peak_vline = self.ax_interferogram.axvline(
             0.0, color="#111111", lw=1.0, ls="--", alpha=0.7
         )
@@ -535,6 +558,12 @@ class InterferometryApp(tk.Tk):
                 "west_auto_spectrum_y_min",
                 "west_auto_spectrum_y_max",
             ),
+            "fringe_time": (
+                self.ax_fringe_time,
+                self.fringe_iq_autoscale,
+                "fringe_iq_y_min",
+                "fringe_iq_y_max",
+            ),
         }
 
     def _build_plot_panel_controls(self) -> None:
@@ -580,7 +609,7 @@ class InterferometryApp(tk.Tk):
         axis, autoscale_var, _min_key, _max_key = self._plot_panel_specs()[name]
         autoscale_var.set("off" if autoscale_var.get() == "on" else "on")
         if autoscale_var.get() == "on" and (values := self._latest_plot_values(name)) is not None:
-            autoscale_positive_axis(axis, values)
+            autoscale_plot_axis(axis, values, symmetric=(name == "fringe_time"))
         self._refresh_plot_button(name)
         self._apply_panel_plot_scales(draw=True)
 
@@ -619,7 +648,16 @@ class InterferometryApp(tk.Tk):
             "west_autocorr": self._last_west_autocorr_mag,
             "east_auto_spectrum": self._last_east_auto_spectrum_mag,
             "west_auto_spectrum": self._last_west_auto_spectrum_mag,
+            "fringe_time": self._latest_fringe_values(),
         }[name]
+
+    def _latest_fringe_values(self) -> np.ndarray | None:
+        if not self._fringe_i_history:
+            return None
+        return np.asarray(
+            (*self._fringe_i_history, *self._fringe_q_history),
+            dtype=np.float64,
+        )
 
     def start(self) -> None:
         try:
@@ -829,18 +867,30 @@ class InterferometryApp(tk.Tk):
         self._fringe_i_history.append(float(np.real(visibility)))
         self._fringe_q_history.append(float(np.imag(visibility)))
 
-        oldest_time = elapsed - FRINGE_HISTORY_SECONDS
+        oldest_time = elapsed - FRINGE_HISTORY_MAX_SECONDS
         while self._fringe_time_history and self._fringe_time_history[0] < oldest_time:
             self._fringe_time_history.popleft()
             self._fringe_i_history.popleft()
             self._fringe_q_history.popleft()
 
+    def _on_fringe_window_changed(self, value: float) -> None:
+        self._fringe_time_window_minutes = clamp_fringe_window_minutes(float(value))
+        self._save_settings()
+        self._draw_fringe_history(draw=True)
+
+    def _fringe_window_seconds(self) -> float:
+        return self._fringe_time_window_minutes * 60.0
+
     def _draw_fringe_history(self, draw: bool = False) -> None:
+        window_seconds = self._fringe_window_seconds()
         if not self._fringe_time_history:
             self.fringe_i_line.set_data([], [])
             self.fringe_q_line.set_data([], [])
-            self.ax_fringe_time.set_xlim(0.0, FRINGE_HISTORY_SECONDS)
-            self.ax_fringe_time.set_ylim(-1.0, 1.0)
+            self.ax_fringe_time.set_xlim(0.0, window_seconds)
+            if self.fringe_iq_autoscale.get() == "on":
+                self.ax_fringe_time.set_ylim(-1.0, 1.0)
+            else:
+                self._apply_panel_plot_scales(draw=False)
             if draw:
                 self.canvas.draw_idle()
             return
@@ -848,17 +898,26 @@ class InterferometryApp(tk.Tk):
         times = np.asarray(self._fringe_time_history, dtype=np.float64)
         i_values = np.asarray(self._fringe_i_history, dtype=np.float64)
         q_values = np.asarray(self._fringe_q_history, dtype=np.float64)
-        self.fringe_i_line.set_data(times, i_values)
-        self.fringe_q_line.set_data(times, q_values)
 
-        x_max = max(FRINGE_HISTORY_SECONDS, float(times[-1]))
-        x_min = max(0.0, x_max - FRINGE_HISTORY_SECONDS)
+        x_max = max(window_seconds, float(times[-1]))
+        x_min = max(0.0, x_max - window_seconds)
+        visible = times >= x_min
+        display_times = times[visible]
+        display_i = i_values[visible]
+        display_q = q_values[visible]
+        if display_times.size > FRINGE_DISPLAY_MAX_POINTS:
+            step = int(np.ceil(display_times.size / FRINGE_DISPLAY_MAX_POINTS))
+            display_times = display_times[::step]
+            display_i = display_i[::step]
+            display_q = display_q[::step]
+        self.fringe_i_line.set_data(display_times, display_i)
+        self.fringe_q_line.set_data(display_times, display_q)
         self.ax_fringe_time.set_xlim(x_min, x_max)
 
-        maximum = float(np.nanmax(np.abs(np.concatenate((i_values, q_values)))))
-        if not np.isfinite(maximum) or maximum <= 0.0:
-            maximum = 1e-6
-        self.ax_fringe_time.set_ylim(-maximum * 1.15, maximum * 1.15)
+        if self.fringe_iq_autoscale.get() == "on":
+            autoscale_symmetric_axis(self.ax_fringe_time, np.concatenate((display_i, display_q)))
+        else:
+            self._apply_panel_plot_scales(draw=False)
         if draw:
             self.canvas.draw_idle()
 
@@ -1129,6 +1188,8 @@ class InterferometryApp(tk.Tk):
             "west_autocorr_autoscale": self.west_autocorr_autoscale.get(),
             "east_auto_spectrum_autoscale": self.east_auto_spectrum_autoscale.get(),
             "west_auto_spectrum_autoscale": self.west_auto_spectrum_autoscale.get(),
+            "fringe_iq_autoscale": self.fringe_iq_autoscale.get(),
+            "fringe_time_window_minutes": f"{self._fringe_time_window_minutes:.0f}",
             "continuum_snr_mode": self.continuum_snr_mode.get(),
             "record_visibility_mode": self.record_visibility_mode.get(),
         }
@@ -1168,6 +1229,23 @@ def autoscale_positive_axis(axis, values: np.ndarray) -> None:
     axis.set_ylim(0, maximum * 1.15)
 
 
+def autoscale_symmetric_axis(axis, values: np.ndarray) -> None:
+    if values.size == 0:
+        axis.set_ylim(-1.0, 1.0)
+        return
+    maximum = float(np.nanmax(np.abs(values)))
+    if not np.isfinite(maximum) or maximum <= 0.0:
+        maximum = 1e-6
+    axis.set_ylim(-maximum * 1.15, maximum * 1.15)
+
+
+def autoscale_plot_axis(axis, values: np.ndarray, symmetric: bool = False) -> None:
+    if symmetric:
+        autoscale_symmetric_axis(axis, values)
+    else:
+        autoscale_positive_axis(axis, values)
+
+
 def autoscale_button_label(variable: tk.StringVar, compact: bool = False) -> str:
     if compact:
         return "Auto" if variable.get() == "on" else "Man"
@@ -1185,6 +1263,7 @@ def plot_control_label(name: str) -> str:
         "west_autocorr": "West autocorr",
         "east_auto_spectrum": "East spectrum",
         "west_auto_spectrum": "West spectrum",
+        "fringe_time": "Fringe I/Q",
     }
     return labels[name]
 
@@ -1208,6 +1287,18 @@ def parse_float_text(value: str, label: str) -> float:
 
 def format_no_decimal(value: float) -> str:
     return f"{value:.0f}"
+
+
+def clamp_fringe_window_minutes(value: float) -> float:
+    return min(FRINGE_WINDOW_MINUTES_MAX, max(FRINGE_WINDOW_MINUTES_MIN, value))
+
+
+def parse_fringe_window_minutes(value: str) -> float:
+    try:
+        parsed = parse_float_text(value, "Fringe time span")
+    except ValueError:
+        parsed = FRINGE_WINDOW_MINUTES_DEFAULT
+    return clamp_fringe_window_minutes(parsed)
 
 
 def validate_continuum_inputs(values: dict[str, str]) -> None:
@@ -1285,11 +1376,15 @@ def load_settings() -> dict[str, str]:
         "west_autocorr_autoscale",
         "east_auto_spectrum_autoscale",
         "west_auto_spectrum_autoscale",
+        "fringe_iq_autoscale",
         "continuum_snr_mode",
         "record_visibility_mode",
     ):
         if settings[key] not in {"on", "off"}:
             settings[key] = DEFAULT_SETTINGS[key]
+    settings["fringe_time_window_minutes"] = (
+        f"{parse_fringe_window_minutes(settings['fringe_time_window_minutes']):.0f}"
+    )
     for key in (
         "observing_frequency_mhz",
         "lnb_lo_frequency_mhz",

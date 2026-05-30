@@ -1,5 +1,13 @@
 # Version History
 
+## 0.3.10-eta - Fringe Time Controls
+
+- Added a Time span slider under the Fringe I/Q plot with a selectable range
+  from 10 to 180 minutes.
+- Added compact Auto/Manual Y-axis scaling controls to the Fringe I/Q plot.
+- Increased retained Fringe I/Q history to support the full 180-minute display
+  window.
+
 ## 0.3.9-eta - Fringe I/Q Time Plot
 
 - Added a rolling Fringe I/Q vs Time panel below the existing plot panes.
