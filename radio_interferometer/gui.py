@@ -32,10 +32,6 @@ PLOT_CONTROL_WIDTH = 0.055
 PLOT_CONTROL_HEIGHT = 0.026
 PLOT_CONTROL_GAP = 0.006
 PLOT_CONTROL_FONT_SIZE = 8
-FRINGE_CONTROL_WIDTH = 0.052
-FRINGE_CONTROL_LEFT_OFFSET = 0.006
-FRINGE_CONTROL_FONT_SIZE = 6
-FRINGE_CONTROL_STACK_Y_OFFSET = 0.084
 GRID_MAJOR_COLOR = "#d0d0d0"
 GRID_MINOR_COLOR = "#e8e8e8"
 FRINGE_WINDOW_MINUTES_MIN = 10.0
@@ -470,13 +466,8 @@ class InterferometryApp(tk.Tk):
         (self.west_auto_spectrum_line,) = self.ax_west_auto_spectrum.plot(
             [], [], color="#17becf", lw=1.1
         )
-        (self.fringe_i_line,) = self.ax_fringe_time.plot(
-            [], [], color="#1f77b4", lw=1.1, label="I"
-        )
-        (self.fringe_q_line,) = self.ax_fringe_time.plot(
-            [], [], color="#d62728", lw=1.1, label="Q"
-        )
-        self.ax_fringe_time.legend(loc="upper left", framealpha=0.8)
+        (self.fringe_i_line,) = self.ax_fringe_time.plot([], [], color="#1f77b4", lw=1.1)
+        (self.fringe_q_line,) = self.ax_fringe_time.plot([], [], color="#d62728", lw=1.1)
         self.fringe_time_slider = Slider(
             self.ax_fringe_time_slider,
             "Time span (min)",
@@ -581,10 +572,7 @@ class InterferometryApp(tk.Tk):
             control_font_size = PLOT_CONTROL_FONT_SIZE
             button_y = position.y1 - PLOT_CONTROL_HEIGHT
             if name == "fringe_time":
-                control_x = position.x0 + FRINGE_CONTROL_LEFT_OFFSET
-                control_width = FRINGE_CONTROL_WIDTH
-                control_font_size = FRINGE_CONTROL_FONT_SIZE
-                button_y = position.y1 - FRINGE_CONTROL_STACK_Y_OFFSET
+                control_x = position.x0 + PLOT_CONTROL_GAP
             button_axis = self.figure.add_axes(
                 [control_x, button_y, control_width, PLOT_CONTROL_HEIGHT]
             )

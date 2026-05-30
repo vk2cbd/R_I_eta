@@ -1,5 +1,12 @@
 # Version History
 
+## 0.3.15-eta - Fringe Control Simplification
+
+- Removed the I/Q legend from the Fringe I/Q plot.
+- Restored the Fringe I/Q Auto/Manual and Y-axis scale controls to the same
+  size and font as the other plot controls.
+- Placed the standard Fringe I/Q control stack at the top-left of the panel.
+
 ## 0.3.14-eta - Fringe Control Alignment
 
 - Reduced the Fringe I/Q manual scale box width and font size.
