@@ -1,5 +1,13 @@
 # Version History
 
+## 0.3.9-eta - Fringe I/Q Time Plot
+
+- Added a rolling Fringe I/Q vs Time panel below the existing plot panes.
+- The panel plots the real (I) and imaginary (Q) broadband visibility
+  components, giving a live fringe trace for later fringe-stopping validation.
+- Fringe history resets on app start and averaging reset, while the final trace
+  remains visible after stop.
+
 ## 0.3.8-eta - Plot Graticules
 
 - Added consistent major and minor graticules to every plot pane.

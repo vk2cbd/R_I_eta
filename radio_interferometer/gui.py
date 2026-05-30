@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 import csv
 from datetime import datetime, timezone
 import json
@@ -32,6 +33,7 @@ PLOT_CONTROL_HEIGHT = 0.026
 PLOT_CONTROL_GAP = 0.006
 GRID_MAJOR_COLOR = "#d0d0d0"
 GRID_MINOR_COLOR = "#e8e8e8"
+FRINGE_HISTORY_SECONDS = 300.0
 
 FIELD_DEFAULTS = [
     ("observing_frequency_mhz", "Observing freq (MHz)", "4800"),
@@ -168,6 +170,10 @@ class InterferometryApp(tk.Tk):
         self._last_west_autocorr_mag: np.ndarray | None = None
         self._last_east_auto_spectrum_mag: np.ndarray | None = None
         self._last_west_auto_spectrum_mag: np.ndarray | None = None
+        self._fringe_history_start: float | None = None
+        self._fringe_time_history: deque[float] = deque()
+        self._fringe_i_history: deque[float] = deque()
+        self._fringe_q_history: deque[float] = deque()
 
         self._build_controls()
         self._build_plots()
@@ -391,13 +397,15 @@ class InterferometryApp(tk.Tk):
         plot_frame = ttk.Frame(self, padding=(0, 10, 10, 10))
         plot_frame.pack(side=tk.RIGHT, expand=True, fill=tk.BOTH)
 
-        self.figure = Figure(figsize=(11, 10), dpi=100)
-        self.ax_interferogram = self.figure.add_subplot(321)
-        self.ax_spectrum = self.figure.add_subplot(322)
-        self.ax_east_autocorr = self.figure.add_subplot(323)
-        self.ax_west_autocorr = self.figure.add_subplot(324)
-        self.ax_east_auto_spectrum = self.figure.add_subplot(325)
-        self.ax_west_auto_spectrum = self.figure.add_subplot(326)
+        self.figure = Figure(figsize=(11, 11), dpi=100)
+        grid = self.figure.add_gridspec(4, 2, height_ratios=[1.0, 1.0, 1.0, 0.85])
+        self.ax_interferogram = self.figure.add_subplot(grid[0, 0])
+        self.ax_spectrum = self.figure.add_subplot(grid[0, 1])
+        self.ax_east_autocorr = self.figure.add_subplot(grid[1, 0])
+        self.ax_west_autocorr = self.figure.add_subplot(grid[1, 1])
+        self.ax_east_auto_spectrum = self.figure.add_subplot(grid[2, 0])
+        self.ax_west_auto_spectrum = self.figure.add_subplot(grid[2, 1])
+        self.ax_fringe_time = self.figure.add_subplot(grid[3, :])
         self.ax_phase = self.ax_spectrum.twinx()
 
         self.ax_interferogram.set_title("Realtime Interferogram")
@@ -419,6 +427,11 @@ class InterferometryApp(tk.Tk):
         self.ax_west_auto_spectrum.set_title("West Antenna Spectrum")
         self.ax_west_auto_spectrum.set_xlabel("Sky frequency (MHz)")
         self.ax_west_auto_spectrum.set_ylabel("Power")
+        self.ax_fringe_time.set_title("Fringe I/Q vs Time")
+        self.ax_fringe_time.set_xlabel("Time since start (s)")
+        self.ax_fringe_time.set_ylabel("Broadband visibility")
+        self.ax_fringe_time.set_xlim(0.0, FRINGE_HISTORY_SECONDS)
+        self.ax_fringe_time.set_ylim(-1.0, 1.0)
         self._apply_graticules()
 
         (self.interferogram_line,) = self.ax_interferogram.plot([], [], color="#1f77b4", lw=1.4)
@@ -438,6 +451,13 @@ class InterferometryApp(tk.Tk):
         (self.west_auto_spectrum_line,) = self.ax_west_auto_spectrum.plot(
             [], [], color="#17becf", lw=1.1
         )
+        (self.fringe_i_line,) = self.ax_fringe_time.plot(
+            [], [], color="#1f77b4", lw=1.1, label="I"
+        )
+        (self.fringe_q_line,) = self.ax_fringe_time.plot(
+            [], [], color="#d62728", lw=1.1, label="Q"
+        )
+        self.ax_fringe_time.legend(loc="upper right", framealpha=0.8)
         self.peak_vline = self.ax_interferogram.axvline(
             0.0, color="#111111", lw=1.0, ls="--", alpha=0.7
         )
@@ -472,6 +492,7 @@ class InterferometryApp(tk.Tk):
             self.ax_west_autocorr,
             self.ax_east_auto_spectrum,
             self.ax_west_auto_spectrum,
+            self.ax_fringe_time,
         )
         for axis in axes:
             axis.set_axisbelow(True)
@@ -615,6 +636,7 @@ class InterferometryApp(tk.Tk):
         self._backend = backend
         self._latest_backend_status = {}
         self._last_draw_time = 0.0
+        self._reset_fringe_history()
         self._running = True
         self.start_button.configure(state=tk.DISABLED)
         self.stop_button.configure(state=tk.NORMAL)
@@ -637,6 +659,7 @@ class InterferometryApp(tk.Tk):
     def reset_average(self) -> None:
         if self._backend is not None:
             self._backend.reset_average()
+            self._reset_fringe_history()
             self.status.set("Averaging reset")
 
     def _update_loop(self) -> None:
@@ -683,50 +706,22 @@ class InterferometryApp(tk.Tk):
         phase = np.angle(result.cross_spectrum)
         peak_snr = estimate_peak_snr(interferogram_mag)
         peak_lag_bin = float(result.lag_bins[peak_snr.index])
-        continuum = None
+        continuum, continuum_error = self._estimate_broadband_visibility(
+            result,
+            config,
+            peak_lag_bin,
+        )
         continuum_text = "Continuum SNR: off"
         if self.continuum_snr_mode.get() == "on":
-            try:
-                continuum = estimate_broadband_continuum_snr(
-                    result.cross_spectrum,
-                    result.frequency_offsets_hz,
-                    peak_lag_bin,
-                    config.sample_rate_hz,
-                    edge_percent=parse_float_text(
-                        self._committed_continuum_inputs["continuum_edge_percent"],
-                        "Continuum edge exclude",
-                    ),
-                    rfi_sigma=parse_float_text(
-                        self._committed_continuum_inputs["continuum_rfi_sigma"],
-                        "Continuum RFI sigma",
-                    ),
-                )
+            if continuum is not None:
                 continuum_text = (
                     f"Continuum SNR: {continuum.snr:.2f}\n"
                     f"Cont amp: {continuum.amplitude:.3g}\n"
                     f"Cont phase: {continuum.phase_rad:.3f} rad\n"
                     f"Clean bins: {continuum.bins_used}"
                 )
-            except ValueError as exc:
-                continuum_text = f"Continuum SNR: {exc}"
-        elif self.record_visibility_mode.get() == "on":
-            try:
-                continuum = estimate_broadband_continuum_snr(
-                    result.cross_spectrum,
-                    result.frequency_offsets_hz,
-                    peak_lag_bin,
-                    config.sample_rate_hz,
-                    edge_percent=parse_float_text(
-                        self._committed_continuum_inputs["continuum_edge_percent"],
-                        "Continuum edge exclude",
-                    ),
-                    rfi_sigma=parse_float_text(
-                        self._committed_continuum_inputs["continuum_rfi_sigma"],
-                        "Continuum RFI sigma",
-                    ),
-                )
-            except ValueError:
-                continuum = None
+            elif continuum_error is not None:
+                continuum_text = f"Continuum SNR: {continuum_error}"
 
         if continuum is not None:
             self.visibility_status.set(
@@ -737,9 +732,11 @@ class InterferometryApp(tk.Tk):
                 f"Phase {continuum.phase_rad:.4f} rad, "
                 f"SNR {continuum.snr:.2f}"
             )
+            self._append_fringe_sample(continuum.visibility)
             self._record_visibility_if_needed(config, continuum, peak_lag_bin)
         else:
             self.visibility_status.set("Visibility: --")
+        self._draw_fringe_history()
 
         self.interferogram_line.set_data(result.lag_bins, interferogram_mag)
         self.peak_marker.set_data([peak_lag_bin], [peak_snr.peak_value])
@@ -794,6 +791,76 @@ class InterferometryApp(tk.Tk):
         self._refresh_plot_buttons()
 
         self.canvas.draw_idle()
+
+    def _estimate_broadband_visibility(self, result, config, peak_lag_bin: float):
+        try:
+            continuum = estimate_broadband_continuum_snr(
+                result.cross_spectrum,
+                result.frequency_offsets_hz,
+                peak_lag_bin,
+                config.sample_rate_hz,
+                edge_percent=parse_float_text(
+                    self._committed_continuum_inputs["continuum_edge_percent"],
+                    "Continuum edge exclude",
+                ),
+                rfi_sigma=parse_float_text(
+                    self._committed_continuum_inputs["continuum_rfi_sigma"],
+                    "Continuum RFI sigma",
+                ),
+            )
+        except ValueError as exc:
+            return None, exc
+        return continuum, None
+
+    def _reset_fringe_history(self) -> None:
+        self._fringe_history_start = None
+        self._fringe_time_history.clear()
+        self._fringe_i_history.clear()
+        self._fringe_q_history.clear()
+        if hasattr(self, "fringe_i_line"):
+            self._draw_fringe_history(draw=True)
+
+    def _append_fringe_sample(self, visibility: complex) -> None:
+        now = monotonic()
+        if self._fringe_history_start is None:
+            self._fringe_history_start = now
+        elapsed = now - self._fringe_history_start
+        self._fringe_time_history.append(elapsed)
+        self._fringe_i_history.append(float(np.real(visibility)))
+        self._fringe_q_history.append(float(np.imag(visibility)))
+
+        oldest_time = elapsed - FRINGE_HISTORY_SECONDS
+        while self._fringe_time_history and self._fringe_time_history[0] < oldest_time:
+            self._fringe_time_history.popleft()
+            self._fringe_i_history.popleft()
+            self._fringe_q_history.popleft()
+
+    def _draw_fringe_history(self, draw: bool = False) -> None:
+        if not self._fringe_time_history:
+            self.fringe_i_line.set_data([], [])
+            self.fringe_q_line.set_data([], [])
+            self.ax_fringe_time.set_xlim(0.0, FRINGE_HISTORY_SECONDS)
+            self.ax_fringe_time.set_ylim(-1.0, 1.0)
+            if draw:
+                self.canvas.draw_idle()
+            return
+
+        times = np.asarray(self._fringe_time_history, dtype=np.float64)
+        i_values = np.asarray(self._fringe_i_history, dtype=np.float64)
+        q_values = np.asarray(self._fringe_q_history, dtype=np.float64)
+        self.fringe_i_line.set_data(times, i_values)
+        self.fringe_q_line.set_data(times, q_values)
+
+        x_max = max(FRINGE_HISTORY_SECONDS, float(times[-1]))
+        x_min = max(0.0, x_max - FRINGE_HISTORY_SECONDS)
+        self.ax_fringe_time.set_xlim(x_min, x_max)
+
+        maximum = float(np.nanmax(np.abs(np.concatenate((i_values, q_values)))))
+        if not np.isfinite(maximum) or maximum <= 0.0:
+            maximum = 1e-6
+        self.ax_fringe_time.set_ylim(-maximum * 1.15, maximum * 1.15)
+        if draw:
+            self.canvas.draw_idle()
 
     def _read_config(self, raw_inputs: dict[str, str] | None = None) -> ObservationConfig:
         raw_inputs = self._committed_inputs if raw_inputs is None else raw_inputs
