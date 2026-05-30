@@ -1,5 +1,11 @@
 # Version History
 
+## 0.3.11-eta - Stable Fringe Layout
+
+- Moved the Fringe I/Q Auto/Manual and Y-axis scale controls to the left side
+  of the Fringe I/Q panel below the I/Q legend.
+- Treat this as the stable Eta version before moving future work to Theta.
+
 ## 0.3.10-eta - Fringe Time Controls
 
 - Added a Time span slider under the Fringe I/Q plot with a selectable range

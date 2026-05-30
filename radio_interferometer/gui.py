@@ -572,8 +572,12 @@ class InterferometryApp(tk.Tk):
         for name, (axis, autoscale_var, min_key, max_key) in self._plot_panel_specs().items():
             position = axis.get_position()
             control_x = position.x1 - PLOT_CONTROL_WIDTH
+            button_y = position.y1 - PLOT_CONTROL_HEIGHT
+            if name == "fringe_time":
+                control_x = position.x0 + 0.01
+                button_y = position.y1 - (PLOT_CONTROL_HEIGHT * 2.0) - PLOT_CONTROL_GAP
             button_axis = self.figure.add_axes(
-                [control_x, position.y1 - PLOT_CONTROL_HEIGHT, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT]
+                [control_x, button_y, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT]
             )
             button = Button(
                 button_axis,
@@ -586,8 +590,8 @@ class InterferometryApp(tk.Tk):
             )
             self._plot_buttons[name] = button
 
-            min_y = position.y1 - (PLOT_CONTROL_HEIGHT * 2.0) - PLOT_CONTROL_GAP
-            max_y = position.y1 - (PLOT_CONTROL_HEIGHT * 3.0) - (PLOT_CONTROL_GAP * 2.0)
+            min_y = button_y - PLOT_CONTROL_HEIGHT - PLOT_CONTROL_GAP
+            max_y = button_y - (PLOT_CONTROL_HEIGHT * 2.0) - (PLOT_CONTROL_GAP * 2.0)
             min_axis = self.figure.add_axes([control_x, min_y, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT])
             max_axis = self.figure.add_axes([control_x, max_y, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT])
             min_box = TextBox(
