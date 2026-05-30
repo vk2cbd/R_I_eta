@@ -32,8 +32,9 @@ PLOT_CONTROL_WIDTH = 0.055
 PLOT_CONTROL_HEIGHT = 0.026
 PLOT_CONTROL_GAP = 0.006
 PLOT_CONTROL_FONT_SIZE = 8
-FRINGE_CONTROL_WIDTH = 0.074
-FRINGE_CONTROL_FONT_SIZE = 7
+FRINGE_CONTROL_WIDTH = 0.052
+FRINGE_CONTROL_LEFT_OFFSET = 0.006
+FRINGE_CONTROL_FONT_SIZE = 6
 FRINGE_CONTROL_STACK_Y_OFFSET = 0.084
 GRID_MAJOR_COLOR = "#d0d0d0"
 GRID_MINOR_COLOR = "#e8e8e8"
@@ -580,7 +581,7 @@ class InterferometryApp(tk.Tk):
             control_font_size = PLOT_CONTROL_FONT_SIZE
             button_y = position.y1 - PLOT_CONTROL_HEIGHT
             if name == "fringe_time":
-                control_x = position.x0 + 0.018
+                control_x = position.x0 + FRINGE_CONTROL_LEFT_OFFSET
                 control_width = FRINGE_CONTROL_WIDTH
                 control_font_size = FRINGE_CONTROL_FONT_SIZE
                 button_y = position.y1 - FRINGE_CONTROL_STACK_Y_OFFSET

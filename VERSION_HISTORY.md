@@ -1,5 +1,10 @@
 # Version History
 
+## 0.3.14-eta - Fringe Control Alignment
+
+- Reduced the Fringe I/Q manual scale box width and font size.
+- Moved the Fringe I/Q control stack left to align with the I/Q legend.
+
 ## 0.3.13-eta - Fringe Control Stack
 
 - Stacked the Fringe I/Q Auto/Manual and manual Y-axis scale controls vertically
