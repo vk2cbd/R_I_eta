@@ -32,8 +32,9 @@ PLOT_CONTROL_WIDTH = 0.055
 PLOT_CONTROL_HEIGHT = 0.026
 PLOT_CONTROL_GAP = 0.006
 PLOT_CONTROL_FONT_SIZE = 8
-FRINGE_CONTROL_BOX_WIDTH = 0.064
-FRINGE_CONTROL_ROW_Y_OFFSET = 0.082
+FRINGE_CONTROL_WIDTH = 0.074
+FRINGE_CONTROL_FONT_SIZE = 7
+FRINGE_CONTROL_STACK_Y_OFFSET = 0.084
 GRID_MAJOR_COLOR = "#d0d0d0"
 GRID_MINOR_COLOR = "#e8e8e8"
 FRINGE_WINDOW_MINUTES_MIN = 10.0
@@ -575,12 +576,16 @@ class InterferometryApp(tk.Tk):
         for name, (axis, autoscale_var, min_key, max_key) in self._plot_panel_specs().items():
             position = axis.get_position()
             control_x = position.x1 - PLOT_CONTROL_WIDTH
+            control_width = PLOT_CONTROL_WIDTH
+            control_font_size = PLOT_CONTROL_FONT_SIZE
             button_y = position.y1 - PLOT_CONTROL_HEIGHT
             if name == "fringe_time":
                 control_x = position.x0 + 0.018
-                button_y = position.y1 - FRINGE_CONTROL_ROW_Y_OFFSET
+                control_width = FRINGE_CONTROL_WIDTH
+                control_font_size = FRINGE_CONTROL_FONT_SIZE
+                button_y = position.y1 - FRINGE_CONTROL_STACK_Y_OFFSET
             button_axis = self.figure.add_axes(
-                [control_x, button_y, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT]
+                [control_x, button_y, control_width, PLOT_CONTROL_HEIGHT]
             )
             button = Button(
                 button_axis,
@@ -588,41 +593,20 @@ class InterferometryApp(tk.Tk):
                 color=autoscale_button_color(autoscale_var),
                 hovercolor="#d9ead3",
             )
-            button.label.set_fontsize(PLOT_CONTROL_FONT_SIZE)
+            button.label.set_fontsize(control_font_size)
             button.on_clicked(
                 lambda _event, name=name: self._toggle_plot_autoscale(name)
             )
             self._plot_buttons[name] = button
 
-            if name == "fringe_time":
-                min_axis = self.figure.add_axes(
-                    [
-                        control_x + PLOT_CONTROL_WIDTH + PLOT_CONTROL_GAP,
-                        button_y,
-                        FRINGE_CONTROL_BOX_WIDTH,
-                        PLOT_CONTROL_HEIGHT,
-                    ]
-                )
-                max_axis = self.figure.add_axes(
-                    [
-                        control_x
-                        + PLOT_CONTROL_WIDTH
-                        + FRINGE_CONTROL_BOX_WIDTH
-                        + (PLOT_CONTROL_GAP * 2.0),
-                        button_y,
-                        FRINGE_CONTROL_BOX_WIDTH,
-                        PLOT_CONTROL_HEIGHT,
-                    ]
-                )
-            else:
-                min_y = button_y - PLOT_CONTROL_HEIGHT - PLOT_CONTROL_GAP
-                max_y = button_y - (PLOT_CONTROL_HEIGHT * 2.0) - (PLOT_CONTROL_GAP * 2.0)
-                min_axis = self.figure.add_axes(
-                    [control_x, min_y, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT]
-                )
-                max_axis = self.figure.add_axes(
-                    [control_x, max_y, PLOT_CONTROL_WIDTH, PLOT_CONTROL_HEIGHT]
-                )
+            min_y = button_y - PLOT_CONTROL_HEIGHT - PLOT_CONTROL_GAP
+            max_y = button_y - (PLOT_CONTROL_HEIGHT * 2.0) - (PLOT_CONTROL_GAP * 2.0)
+            min_axis = self.figure.add_axes(
+                [control_x, min_y, control_width, PLOT_CONTROL_HEIGHT]
+            )
+            max_axis = self.figure.add_axes(
+                [control_x, max_y, control_width, PLOT_CONTROL_HEIGHT]
+            )
             min_box = TextBox(
                 min_axis,
                 "",
@@ -633,8 +617,8 @@ class InterferometryApp(tk.Tk):
                 "",
                 initial=self._plot_scale_inputs[max_key],
             )
-            min_box.text_disp.set_fontsize(PLOT_CONTROL_FONT_SIZE)
-            max_box.text_disp.set_fontsize(PLOT_CONTROL_FONT_SIZE)
+            min_box.text_disp.set_fontsize(control_font_size)
+            max_box.text_disp.set_fontsize(control_font_size)
             min_box.on_submit(lambda _text, name=name: self._commit_plot_scale(name))
             max_box.on_submit(lambda _text, name=name: self._commit_plot_scale(name))
             self._plot_textboxes[f"{name}_min"] = min_box

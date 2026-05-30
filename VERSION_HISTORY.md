@@ -1,5 +1,12 @@
 # Version History
 
+## 0.3.13-eta - Fringe Control Stack
+
+- Stacked the Fringe I/Q Auto/Manual and manual Y-axis scale controls vertically
+  under the I/Q legend without overlap.
+- Used wider Fringe I/Q control boxes and a smaller control font for cleaner
+  value display.
+
 ## 0.3.12-eta - Fringe Control Fit
 
 - Repositioned the Fringe I/Q Auto/Manual and Y-axis scale controls into a
