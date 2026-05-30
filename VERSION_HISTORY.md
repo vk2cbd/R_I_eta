@@ -1,5 +1,14 @@
 # Version History
 
+## 0.3.2-eta - Calculated Observing Frequency
+
+- Branched Eta development from the corrected Epsilon baseline.
+- Kept the Observing freq field visible, but made it read-only and calculated
+  from LNB LO freq minus B210 tune IF.
+- Added the LNB LO freq field between Observing freq and B210 tune IF.
+- Changed Observing freq, LNB LO freq, and B210 tune IF defaults/display to
+  whole-MHz values with no decimal point.
+
 ## 0.3.1-epsilon - Epsilon Identity Fix
 
 - Corrected the app version suffix from Delta to Epsilon.
