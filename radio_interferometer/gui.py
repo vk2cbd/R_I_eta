@@ -27,8 +27,9 @@ AVERAGING_DRAW_REFRESH_MS = 500
 SETTINGS_PATH = Path.home() / ".radio_interferometer_eta_settings.json"
 
 FIELD_DEFAULTS = [
-    ("observing_frequency_mhz", "Observing freq (MHz)", "4800.0"),
-    ("intermediate_frequency_mhz", "B210 tune IF (MHz)", "1150.0"),
+    ("observing_frequency_mhz", "Observing freq (MHz)", "4800"),
+    ("lnb_lo_frequency_mhz", "LNB LO freq (MHz)", "5950"),
+    ("intermediate_frequency_mhz", "B210 tune IF (MHz)", "1150"),
     ("ra_deg", "Source RA (deg)", "83.6331"),
     ("dec_deg", "Source DEC (deg)", "22.0145"),
     ("observer_lat_deg", "Observer lat (deg)", "-33.8688"),
@@ -133,6 +134,7 @@ class InterferometryApp(tk.Tk):
         self._committed_scale_inputs = {
             key: self._settings.get(key, default) for key, _, default in SCALE_FIELD_DEFAULTS
         }
+        self._update_calculated_observing_frequency(self._committed_inputs)
         self._last_draw_time = 0.0
         self._last_visibility_record_time = 0.0
 
@@ -288,8 +290,11 @@ class InterferometryApp(tk.Tk):
             value = tk.StringVar(value=self._settings.get(key, default))
             self.inputs[key] = value
             entry = ttk.Entry(panel, textvariable=value, width=18)
+            if key == "observing_frequency_mhz":
+                entry.configure(state="readonly")
             entry.grid(row=row, column=1, sticky="ew", pady=3)
-            entry.bind("<Return>", self._commit_text_fields)
+            if key != "observing_frequency_mhz":
+                entry.bind("<Return>", self._commit_text_fields)
 
         continuum_row = len(FIELD_DEFAULTS) + 7
         self.continuum_inputs: dict[str, tk.StringVar] = {}
@@ -590,6 +595,15 @@ class InterferometryApp(tk.Tk):
 
         if values["bandwidth_mhz"] <= 0:
             raise ValueError("Bandwidth must be positive.")
+        if values["lnb_lo_frequency_mhz"] <= 0:
+            raise ValueError("LNB LO frequency must be positive.")
+        if values["intermediate_frequency_mhz"] <= 0:
+            raise ValueError("B210 tune IF must be positive.")
+        observing_frequency_mhz = (
+            values["lnb_lo_frequency_mhz"] - values["intermediate_frequency_mhz"]
+        )
+        if observing_frequency_mhz <= 0:
+            raise ValueError("Calculated observing frequency must be positive.")
         if values["bins"] < 8:
             raise ValueError("FX bins must be at least 8.")
         if values["bins"] & (values["bins"] - 1):
@@ -613,6 +627,8 @@ class InterferometryApp(tk.Tk):
         if values["b210_gain_db"] < 0:
             raise ValueError("B210 gain must not be negative.")
 
+        values["observing_frequency_mhz"] = observing_frequency_mhz
+        values.pop("lnb_lo_frequency_mhz")
         return ObservationConfig(**values)
 
     def _should_draw_result(self) -> bool:
@@ -661,6 +677,15 @@ class InterferometryApp(tk.Tk):
             self.status.set(f"Text fields not committed: {exc}")
             return "break"
 
+        self._update_calculated_observing_frequency(new_inputs)
+        for key in (
+            "observing_frequency_mhz",
+            "lnb_lo_frequency_mhz",
+            "intermediate_frequency_mhz",
+        ):
+            new_inputs[key] = format_no_decimal(float(new_inputs[key]))
+            self.inputs[key].set(new_inputs[key])
+
         self._committed_inputs = new_inputs
         self._committed_continuum_inputs = new_continuum_inputs
         self._committed_visibility_inputs = new_visibility_inputs
@@ -673,6 +698,11 @@ class InterferometryApp(tk.Tk):
         else:
             self.status.set("Text fields committed")
         return "break"
+
+    def _update_calculated_observing_frequency(self, inputs: dict[str, str]) -> None:
+        lnb_lo_mhz = parse_float_text(inputs["lnb_lo_frequency_mhz"], "LNB LO frequency")
+        tune_if_mhz = parse_float_text(inputs["intermediate_frequency_mhz"], "B210 tune IF")
+        inputs["observing_frequency_mhz"] = format_no_decimal(lnb_lo_mhz - tune_if_mhz)
 
     def _apply_runtime_config_if_needed(self) -> bool:
         if self._backend is None or self._latest_config is None:
@@ -845,6 +875,10 @@ def parse_float_text(value: str, label: str) -> float:
     return parsed
 
 
+def format_no_decimal(value: float) -> str:
+    return f"{value:.0f}"
+
+
 def validate_continuum_inputs(values: dict[str, str]) -> None:
     edge_percent = parse_float_text(values["continuum_edge_percent"], "Continuum edge exclude")
     rfi_sigma = parse_float_text(values["continuum_rfi_sigma"], "Continuum RFI sigma")
@@ -921,6 +955,21 @@ def load_settings() -> dict[str, str]:
     ):
         if settings[key] not in {"on", "off"}:
             settings[key] = DEFAULT_SETTINGS[key]
+    for key in (
+        "observing_frequency_mhz",
+        "lnb_lo_frequency_mhz",
+        "intermediate_frequency_mhz",
+    ):
+        try:
+            settings[key] = format_no_decimal(parse_float_text(settings[key], key))
+        except ValueError:
+            settings[key] = DEFAULT_SETTINGS[key]
+    try:
+        lnb_lo_mhz = parse_float_text(settings["lnb_lo_frequency_mhz"], "LNB LO frequency")
+        tune_if_mhz = parse_float_text(settings["intermediate_frequency_mhz"], "B210 tune IF")
+        settings["observing_frequency_mhz"] = format_no_decimal(lnb_lo_mhz - tune_if_mhz)
+    except ValueError:
+        settings["observing_frequency_mhz"] = DEFAULT_SETTINGS["observing_frequency_mhz"]
     return settings
 
 
