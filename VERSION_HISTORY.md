@@ -1,5 +1,12 @@
 # Version History
 
+## 0.3.12-eta - Fringe Control Fit
+
+- Repositioned the Fringe I/Q Auto/Manual and Y-axis scale controls into a
+  compact horizontal row under the I/Q legend.
+- Reduced control text size and widened the scale boxes so the values fit
+  cleanly without overlapping.
+
 ## 0.3.11-eta - Stable Fringe Layout
 
 - Moved the Fringe I/Q Auto/Manual and Y-axis scale controls to the left side
