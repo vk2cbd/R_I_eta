@@ -1,5 +1,13 @@
 # Version History
 
+## 0.3.3-eta - Interferogram Autoscale Button
+
+- Moved the interferogram autoscale control from the left GUI panel to a plot
+  button at the top right of the realtime interferogram.
+- Made the autoscale button visually indicate Auto On versus Auto Off.
+- When autoscale is turned off, the current autoscaled Y-axis limits are kept
+  and copied into the manual scale fields for further adjustment.
+
 ## 0.3.2-eta - Calculated Observing Frequency
 
 - Branched Eta development from the corrected Epsilon baseline.

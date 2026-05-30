@@ -13,6 +13,7 @@ from time import monotonic
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.widgets import Button
 
 from . import __version__
 from .backend import CorrelatorBackendProcess
@@ -137,6 +138,7 @@ class InterferometryApp(tk.Tk):
         self._update_calculated_observing_frequency(self._committed_inputs)
         self._last_draw_time = 0.0
         self._last_visibility_record_time = 0.0
+        self._last_interferogram_mag: np.ndarray | None = None
 
         self._build_controls()
         self._build_plots()
@@ -214,27 +216,9 @@ class InterferometryApp(tk.Tk):
 
         self.interferogram_autoscale = tk.StringVar(value=self._settings["interferogram_autoscale"])
         self.spectrum_autoscale = tk.StringVar(value=self._settings["spectrum_autoscale"])
-        ttk.Label(panel, text="Interferogram scale").grid(row=3, column=0, sticky="w", pady=3)
-        interferogram_scale_options = ttk.Frame(panel)
-        interferogram_scale_options.grid(row=3, column=1, sticky="w", pady=3)
-        ttk.Radiobutton(
-            interferogram_scale_options,
-            text="Auto",
-            variable=self.interferogram_autoscale,
-            value="on",
-            command=self._apply_plot_scales,
-        ).pack(side=tk.LEFT)
-        ttk.Radiobutton(
-            interferogram_scale_options,
-            text="Manual",
-            variable=self.interferogram_autoscale,
-            value="off",
-            command=self._apply_plot_scales,
-        ).pack(side=tk.LEFT, padx=(8, 0))
-
-        ttk.Label(panel, text="Spectrum scale").grid(row=4, column=0, sticky="w", pady=3)
+        ttk.Label(panel, text="Spectrum scale").grid(row=3, column=0, sticky="w", pady=3)
         spectrum_scale_options = ttk.Frame(panel)
-        spectrum_scale_options.grid(row=4, column=1, sticky="w", pady=3)
+        spectrum_scale_options.grid(row=3, column=1, sticky="w", pady=3)
         ttk.Radiobutton(
             spectrum_scale_options,
             text="Auto",
@@ -251,9 +235,9 @@ class InterferometryApp(tk.Tk):
         ).pack(side=tk.LEFT, padx=(8, 0))
 
         self.continuum_snr_mode = tk.StringVar(value=self._settings["continuum_snr_mode"])
-        ttk.Label(panel, text="Continuum SNR").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Label(panel, text="Continuum SNR").grid(row=4, column=0, sticky="w", pady=3)
         continuum_options = ttk.Frame(panel)
-        continuum_options.grid(row=5, column=1, sticky="w", pady=3)
+        continuum_options.grid(row=4, column=1, sticky="w", pady=3)
         ttk.Radiobutton(
             continuum_options,
             text="On",
@@ -268,9 +252,9 @@ class InterferometryApp(tk.Tk):
         ).pack(side=tk.LEFT, padx=(8, 0))
 
         self.record_visibility_mode = tk.StringVar(value=self._settings["record_visibility_mode"])
-        ttk.Label(panel, text="Record visibilities").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Label(panel, text="Record visibilities").grid(row=5, column=0, sticky="w", pady=3)
         record_options = ttk.Frame(panel)
-        record_options.grid(row=6, column=1, sticky="w", pady=3)
+        record_options.grid(row=5, column=1, sticky="w", pady=3)
         ttk.Radiobutton(
             record_options,
             text="On",
@@ -285,7 +269,7 @@ class InterferometryApp(tk.Tk):
         ).pack(side=tk.LEFT, padx=(8, 0))
 
         self.inputs: dict[str, tk.StringVar] = {}
-        for row, (key, label, default) in enumerate(FIELD_DEFAULTS, start=7):
+        for row, (key, label, default) in enumerate(FIELD_DEFAULTS, start=6):
             ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", pady=3)
             value = tk.StringVar(value=self._settings.get(key, default))
             self.inputs[key] = value
@@ -296,7 +280,7 @@ class InterferometryApp(tk.Tk):
             if key != "observing_frequency_mhz":
                 entry.bind("<Return>", self._commit_text_fields)
 
-        continuum_row = len(FIELD_DEFAULTS) + 7
+        continuum_row = len(FIELD_DEFAULTS) + 6
         self.continuum_inputs: dict[str, tk.StringVar] = {}
         for row, (key, label, default) in enumerate(CONTINUUM_FIELD_DEFAULTS, start=continuum_row):
             ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", pady=3)
@@ -402,12 +386,63 @@ class InterferometryApp(tk.Tk):
         )
 
         self.figure.tight_layout()
+        self._build_interferogram_autoscale_button()
         self._apply_plot_visibility(draw=False)
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         NavigationToolbar2Tk(self.canvas, plot_frame)
+
+    def _build_interferogram_autoscale_button(self) -> None:
+        position = self.ax_interferogram.get_position()
+        button_axis = self.figure.add_axes(
+            [
+                position.x1 - 0.11,
+                position.y1 - 0.04,
+                0.105,
+                0.03,
+            ]
+        )
+        self.interferogram_autoscale_button = Button(
+            button_axis,
+            autoscale_button_label(self.interferogram_autoscale),
+            color=autoscale_button_color(self.interferogram_autoscale),
+            hovercolor="#d9ead3",
+        )
+        self.interferogram_autoscale_button.on_clicked(
+            lambda _event: self._toggle_interferogram_autoscale()
+        )
+
+    def _toggle_interferogram_autoscale(self) -> None:
+        if self.interferogram_autoscale.get() == "on":
+            self._capture_interferogram_scale()
+            self.interferogram_autoscale.set("off")
+        else:
+            self.interferogram_autoscale.set("on")
+            if self._last_interferogram_mag is not None:
+                autoscale_positive_axis(self.ax_interferogram, self._last_interferogram_mag)
+        self._refresh_interferogram_autoscale_button()
+        self._apply_plot_scales(draw=True)
+
+    def _refresh_interferogram_autoscale_button(self) -> None:
+        self.interferogram_autoscale_button.label.set_text(
+            autoscale_button_label(self.interferogram_autoscale)
+        )
+        self.interferogram_autoscale_button.color = autoscale_button_color(
+            self.interferogram_autoscale
+        )
+        self.interferogram_autoscale_button.ax.set_facecolor(
+            autoscale_button_color(self.interferogram_autoscale)
+        )
+
+    def _capture_interferogram_scale(self) -> None:
+        y_min, y_max = self.ax_interferogram.get_ylim()
+        self.scale_inputs["interferogram_y_min"].set(f"{y_min:.6g}")
+        self.scale_inputs["interferogram_y_max"].set(f"{y_max:.6g}")
+        self._committed_scale_inputs["interferogram_y_min"] = f"{y_min:.6g}"
+        self._committed_scale_inputs["interferogram_y_max"] = f"{y_max:.6g}"
+        self._save_settings()
 
     def start(self) -> None:
         try:
@@ -486,6 +521,7 @@ class InterferometryApp(tk.Tk):
 
         sky_freq_mhz = config.observing_frequency_mhz + result.frequency_offsets_hz / 1_000_000.0
         interferogram_mag = np.abs(result.interferogram)
+        self._last_interferogram_mag = interferogram_mag
         spectrum_mag = np.abs(result.cross_spectrum)
         spectrum_envelope = smooth_line(spectrum_mag, config.spectrum_smoothing_bins)
         phase = np.angle(result.cross_spectrum)
@@ -560,7 +596,7 @@ class InterferometryApp(tk.Tk):
         )
         self.ax_interferogram.set_xlim(float(result.lag_bins.min()), float(result.lag_bins.max()))
         if self.interferogram_autoscale.get() == "on":
-            self.ax_interferogram.set_ylim(0, max(float(interferogram_mag.max()) * 1.15, 1e-6))
+            autoscale_positive_axis(self.ax_interferogram, interferogram_mag)
 
         self.spectrum_line.set_data(sky_freq_mhz, spectrum_envelope)
         self.phase_line.set_data(sky_freq_mhz, phase)
@@ -570,6 +606,7 @@ class InterferometryApp(tk.Tk):
         self.ax_phase.set_ylim(-np.pi, np.pi)
         self._apply_plot_visibility(draw=False)
         self._apply_plot_scales(draw=False)
+        self._refresh_interferogram_autoscale_button()
 
         self.canvas.draw_idle()
 
@@ -659,6 +696,8 @@ class InterferometryApp(tk.Tk):
         self._save_settings()
         self._apply_plot_visibility(draw=False)
         self._apply_plot_scales(draw=False)
+        if hasattr(self, "interferogram_autoscale_button"):
+            self._refresh_interferogram_autoscale_button()
         if self._running:
             self._apply_runtime_config_if_needed()
 
@@ -856,6 +895,24 @@ def smooth_line(values: np.ndarray, bins: int) -> np.ndarray:
     width = min(int(bins), values.size)
     kernel = np.ones(width, dtype=np.float64) / width
     return np.convolve(values, kernel, mode="same")
+
+
+def autoscale_positive_axis(axis, values: np.ndarray) -> None:
+    if values.size == 0:
+        axis.set_ylim(0, 1.0)
+        return
+    maximum = float(np.nanmax(values))
+    if not np.isfinite(maximum) or maximum <= 0.0:
+        maximum = 1e-6
+    axis.set_ylim(0, maximum * 1.15)
+
+
+def autoscale_button_label(variable: tk.StringVar) -> str:
+    return "Auto On" if variable.get() == "on" else "Auto Off"
+
+
+def autoscale_button_color(variable: tk.StringVar) -> str:
+    return "#b6d7a8" if variable.get() == "on" else "#f4cccc"
 
 
 def parse_scale_value(value: str) -> float:
