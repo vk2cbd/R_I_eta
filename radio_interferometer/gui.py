@@ -321,7 +321,7 @@ class InterferometryApp(tk.Tk):
                 entry.configure(state="readonly")
             entry.grid(row=row, column=1, sticky="ew", pady=3)
             if key != "observing_frequency_mhz":
-                entry.bind("<Return>", self._commit_text_fields)
+                self._bind_commit_entry(entry)
 
         continuum_row = len(FIELD_DEFAULTS) + 7
         self.continuum_inputs: dict[str, tk.StringVar] = {}
@@ -331,7 +331,7 @@ class InterferometryApp(tk.Tk):
             self.continuum_inputs[key] = value
             entry = ttk.Entry(panel, textvariable=value, width=18)
             entry.grid(row=row, column=1, sticky="ew", pady=3)
-            entry.bind("<Return>", self._commit_text_fields)
+            self._bind_commit_entry(entry)
 
         visibility_row = continuum_row + len(CONTINUUM_FIELD_DEFAULTS)
         self.visibility_inputs: dict[str, tk.StringVar] = {}
@@ -341,7 +341,7 @@ class InterferometryApp(tk.Tk):
             self.visibility_inputs[key] = value
             entry = ttk.Entry(panel, textvariable=value, width=18)
             entry.grid(row=row, column=1, sticky="ew", pady=3)
-            entry.bind("<Return>", self._commit_text_fields)
+            self._bind_commit_entry(entry)
 
         scale_row = visibility_row + len(VISIBILITY_FIELD_DEFAULTS)
         self.scale_inputs: dict[str, tk.StringVar] = {}
@@ -351,7 +351,7 @@ class InterferometryApp(tk.Tk):
             self.scale_inputs[key] = value
             entry = ttk.Entry(panel, textvariable=value, width=18)
             entry.grid(row=row, column=1, sticky="ew", pady=3)
-            entry.bind("<Return>", self._commit_text_fields)
+            self._bind_commit_entry(entry)
 
         button_row = scale_row + len(SCALE_FIELD_DEFAULTS)
         self.reset_button = ttk.Button(panel, text="Reset Avg", command=self.reset_average)
@@ -379,6 +379,10 @@ class InterferometryApp(tk.Tk):
         self._watch_control(self.west_auto_spectrum_autoscale)
         self._watch_control(self.continuum_snr_mode)
         self._watch_control(self.record_visibility_mode)
+
+    def _bind_commit_entry(self, entry: ttk.Entry) -> None:
+        entry.bind("<Return>", self._commit_text_fields)
+        entry.bind("<KP_Enter>", self._commit_text_fields)
 
     def _build_plots(self) -> None:
         plot_frame = ttk.Frame(self, padding=(0, 10, 10, 10))
@@ -920,7 +924,12 @@ class InterferometryApp(tk.Tk):
         self._backend.update_config(config, source_mode)
         self._latest_config = config
         self._latest_source_mode = source_mode
-        self.status.set(f"Live settings applied; X-corr smoothing {config.averaging_blocks} blocks")
+        self._latest_backend_status = {}
+        self._last_draw_time = 0.0
+        self.status.set(
+            "Live settings sent to backend; "
+            f"FX bins {config.bins}, X-corr smoothing {config.averaging_blocks} blocks"
+        )
         return True
 
     def _apply_plot_visibility(self, draw: bool = True) -> None:
@@ -1132,10 +1141,6 @@ def validate_visibility_inputs(values: dict[str, str]) -> None:
 
 def validate_scale_inputs(values: dict[str, str]) -> None:
     validate_scale_limits(
-        parse_scale_value(values["interferogram_y_min"]),
-        parse_scale_value(values["interferogram_y_max"]),
-    )
-    validate_scale_limits(
         parse_scale_value(values["spectrum_y_min"]),
         parse_scale_value(values["spectrum_y_max"]),
     )
@@ -1152,6 +1157,8 @@ def format_backend_status(status: dict[str, object]) -> str:
     if "queued" not in status and "chunks" not in status:
         return (
             f"processed {status.get('processed', 0)}, "
+            f"active bins {status.get('active_bins', '--')}, "
+            f"active smooth {status.get('active_averaging_blocks', '--')}, "
             f"stale plots {status.get('dropped_results', 0)}"
         )
     return (
@@ -1160,6 +1167,8 @@ def format_backend_status(status: dict[str, object]) -> str:
         f"dropped {status.get('dropped', 0)}, "
         f"FFT blocks {status.get('reads', 0)}, "
         f"processed {status.get('processed', 0)}, "
+        f"active bins {status.get('active_bins', '--')}, "
+        f"active smooth {status.get('active_averaging_blocks', '--')}, "
         f"stale plots {status.get('dropped_results', 0)}, "
         f"overflows {status.get('overflows', 0)}, "
         f"timeouts {status.get('timeouts', 0)}"

@@ -70,6 +70,7 @@ class CorrelatorBackendProcess:
     def update_config(self, config: ObservationConfig, source_mode: str) -> None:
         self.config = config
         self.source_mode = source_mode
+        self._clear_results()
         self._send_command(
             {
                 "type": "update_config",
@@ -104,6 +105,13 @@ class CorrelatorBackendProcess:
             except Empty:
                 pass
             self._command_queue.put_nowait(command)
+
+    def _clear_results(self) -> None:
+        while True:
+            try:
+                self._result_queue.get_nowait()
+            except Empty:
+                break
 
 
 def backend_worker(
@@ -263,6 +271,9 @@ def build_status(
             "overflows": status.get("overflows", 0) + overflow_count,
             "averaging_fill": correlator.averaging_fill_fraction,
             "dropped_results": dropped_results,
+            "active_bins": correlator.config.bins,
+            "active_averaging_blocks": correlator.config.averaging_blocks,
+            "active_bandwidth_mhz": correlator.config.sample_rate_hz / 1_000_000.0,
         }
     )
     return status

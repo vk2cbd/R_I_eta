@@ -1,5 +1,12 @@
 # Version History
 
+## 0.3.7-eta - Runtime Field Feedback
+
+- Cleared stale backend plot results when runtime GUI parameters are changed.
+- Added backend active FX bins and X-corr smoothing values to the status line
+  so committed runtime changes can be confirmed while the app is running.
+- Added keypad Enter support for committing GUI text fields.
+
 ## 0.3.6-eta - Antenna Spectra Panels
 
 - Added East Antenna Spectrum and West Antenna Spectrum panels using the
